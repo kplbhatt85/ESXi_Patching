@@ -1,0 +1,39 @@
+---
+# Update ESXi OS with latest patch with available latest baseline via vCenter's Life Cycle Manager
+- name: "ESXi OS patching - vCenter's Life Cycle Manager ..."
+  hosts: all !localhost
+  gather_facts: true
+  gather_subset:
+    - min
+
+  vars_files: # Target variables files
+    - "variables/common/set-execution-environment.yml"
+    - "variables/play/get-esxi-info.yml"
+
+  tasks:
+    - block: # ESXi OS Patching
+        # Step 1: Initialize Workspace - nab_ansa.workspace.init
+        - name: Step 1 - Initialize target Workspace ..."
+          ansible.builtin.include_role:
+            role: nab_ansa.workspace.init
+            apply: { tags: ["always"] }
+          vars:
+            workspace_state: "directory"
+            credential_actions: "{{ cred_actions }}"
+
+        # Step 2: Pre-Validation for ESXi Patching
+        - name: "Step 2 - Pre-Validation for ESXi Patching ..."
+          ansible.builtin.include_role:
+            name: pre_validation
+
+        # Step 3: ESXi Patching
+        - name: "Step 3 - ESXi Patching ..."
+          ansible.builtin.include_role:
+            name: esxi_patching
+
+        # Step 4: Post-Validation for ESXi Patching
+        - name: "Step 3 - ESXi Patching ..."
+          ansible.builtin.include_role:
+            name: post_validation
+
+  # End of play
