@@ -1,5 +1,6 @@
 ---
 # pre_validation/tasks/main.yml
+
 - name: Gather ESXi host facts
   community.vmware.vmware_host_facts:
     hostname: "{{ vcenter_hostname }}"
@@ -23,7 +24,6 @@
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: "{{ validate_certs }}"
-    esxi_hostname: "{{ inventory_hostname }}"
   delegate_to: localhost
   register: vm_info
 
@@ -41,25 +41,35 @@
   set_fact:
     vms_with_drs_rules: >-
       {{
-        vm_info.virtual_machines | selectattr('name', 'in',
-        drs_rules_info.drs_rule_info[cluster_name] | map(attribute='rule_vms') | flatten | list) | list
+        drs_rules_info.drs_rule_info[cluster_name]
+        | map(attribute='rule_vms')
+        | flatten
+        | list
       }}
 
-- name: Display VMs with DRS rules
+- name: Display VMs affected by each DRS rule
   debug:
-    msg: "VM '{{ item.name }}' is affected by DRS rules."
-  loop: "{{ vms_with_drs_rules }}"
+    msg: "VMs affected by DRS rule '{{ item.rule_name }}': {{ item.rule_vms | join(', ') }}"
+  loop: "{{ drs_rules_info.drs_rule_info[cluster_name] }}"
+  loop_control:
+    label: "{{ item.rule_name }}"
+  when: drs_rules_info.drs_rule_info[cluster_name] | length > 0
+  
+- name: Notify when no DRS rules exist
+  debug:
+    msg: "No DRS rules found for cluster '{{ cluster_name }}'."
+  when: drs_rules_info.drs_rule_info[cluster_name] | length == 0
 
 - name: Enter maintenance mode
-  community.vmware.vmware_maintenancemode:
+  vmware.vmware.esxi_maintenance_mode:
     hostname: "{{ vcenter_hostname }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
-    esxi_hostname: "{{ inventory_hostname }}"
+    name: "{{ inventory_hostname }}"
     validate_certs: "{{ validate_certs }}"
+    enable_maintenance_mode: true
     evacuate: true
     timeout: 600
-    state: present
   delegate_to: localhost
 
 - name: Verify ESXi host is in maintenance mode
@@ -73,8 +83,8 @@
   register: post_maintenance_host_facts
 
 - name: Assert ESXi host is in maintenance mode
-  assert:
+  ansible.builtin.assert:
     that:
-      - post_maintenance_host_facts.ansible_facts.ansible_host_maintenance_mode == "true"
+      - post_maintenance_host_facts.ansible_facts.ansible_in_maintenance_mode
     fail_msg: "ESXi host {{ inventory_hostname }} failed to enter maintenance mode."
-    success_msg: "ESXi host {{ inventory_hostname }} is in maintenance mode."
+    success_msg: "ESXi host {{ inventory_hostname }} is confirmed in maintenance mode."
