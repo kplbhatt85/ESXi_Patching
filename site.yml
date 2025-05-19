@@ -2,9 +2,7 @@
 # Update ESXi OS with latest patch with available latest baseline via vCenter's Life Cycle Manager
 - name: "ESXi OS patching - vCenter's Life Cycle Manager ..."
   hosts: all !localhost
-  gather_facts: true
-  gather_subset:
-    - min
+  gather_facts: false
 
   vars_files: # Target variables files
     - "variables/common/set-execution-environment.yml"
