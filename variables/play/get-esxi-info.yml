@@ -2,6 +2,5 @@
 vcenter_hostname: ""
 vcenter_username: "
 vcenter_password: ""
-esxi_hostname: ""
-cluster_name: ""
+inventory_hostname: ""
 validate_certs: false
