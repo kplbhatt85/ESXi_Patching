@@ -25,13 +25,8 @@
     fail_msg: "ESXi host {{ inventory_hostname }} is NOT connected to vCenter {{ vcenter_hostname }}"
     success_msg: "ESXi host {{ inventory_hostname }} IS connected to vCenter {{ vcenter_hostname }}"
 
-- name: Derive datacenter name from host facts
-  ansible.builtin.set_fact:
-    datacenter_name: "{{ host_facts.ansible_facts.datacenter | default('') }}"
-  no_log: true
-
-- name: Gather list of clusters (name + hosts)
-  vmware.vmware.cluster_info:
+- name: Gather VMs on the ESXi host
+  community.vmware.vmware_vm_info:
     hostname: "{{ vcenter_hostname }}"
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
@@ -43,6 +38,7 @@
   register: clusters
   when: datacenter_name | length > 0
 
+# Extract datacenter and cluster from ESXi host facts
 - name: Derive cluster name from host membership
   no_log: true
   set_fact:
