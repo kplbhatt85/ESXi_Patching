@@ -1,6 +1,7 @@
 # ESXi_Patching/variables/play/get-esxi-data.yml
 vcenter_hostname: ""
-vcenter_username: "
+vcenter_username: ""
 vcenter_password: ""
 inventory_hostname: ""
+cluster_image_version: ""
 validate_certs: false

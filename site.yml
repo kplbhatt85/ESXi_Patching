@@ -15,7 +15,7 @@
   tasks:
     - block: # ESXi OS Patching
         # Step 1: Initialize Workspace - nab_ansa.workspace.init
-        - name: Step 1 - Initialize target Workspace ..."
+        - name: "Step 1 - Initialize target Workspace ..."
           ansible.builtin.include_role:
             role: nab_ansa.workspace.init
             apply: { tags: ["always"] }
@@ -29,9 +29,14 @@
             name: pre_validation
 
         # Step 3: ESXi Patching
-        - name: "Step 3 - ESXi Patching ..."
-          ansible.builtin.include_role:
+        - name: "Step 3 – ESXi Patching ..."
+          serial: 1
+          include_role:
             name: esxi_patching
+          vars:
+            cluster_image_version: "baseline_image_version"
+            lcm_draft_name: "ansible-prep-{{ inventory_hostname }}"
+            patch_timeout: 7200 # 2 hours
 
         # Step 4: Post-Validation for ESXi Patching
         - name: "Step 4 - Post-Validation for ESXi Patching ..."

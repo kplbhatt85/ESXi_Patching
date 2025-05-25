@@ -1,11 +1,11 @@
 ---
-# pre_validation/tasks/main.yml
+# roles/pre_validation/tasks/main.yml
 
 ##############################################################################
 # Perform pre-validation checks on ESXi hosts before entering maintenance mode
 ##############################################################################
 
-# Validate connection state of the ESXi host, gathers VM information like cluster and datacenter names
+# 1 - Validate connection state of the ESXi host, gathers VM information like cluster and datacenter names
 - name: Gather ESXi host facts
   community.vmware.vmware_host_facts:
     hostname: "{{ vcenter_hostname }}"
@@ -25,28 +25,9 @@
     fail_msg: "ESXi host {{ inventory_hostname }} is NOT connected to vCenter {{ vcenter_hostname }}"
     success_msg: "ESXi host {{ inventory_hostname }} IS connected to vCenter {{ vcenter_hostname }}"
 
-- name: Gather VMs on the ESXi host
-  community.vmware.vmware_vm_info:
-    hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    datacenter: "{{ datacenter_name }}"
-    schema: vsphere
-    properties: [name, host]
-    validate_certs: "{{ validate_certs }}"
-  delegate_to: localhost
-  register: clusters
-  when: datacenter_name | length > 0
-
-# Extract datacenter and cluster from ESXi host facts
-- name: Derive cluster name from host membership
-  no_log: true
+- name: Set datacenter name from host facts
   set_fact:
-    cluster_name: "{{ item.key }}"
-  loop: "{{ clusters.clusters | dict2items }}"
-  when:
-    - item.value.host is defined
-    - inventory_hostname in (item.value.host | map(attribute='name') | list)
+    datacenter_name: "{{ host_facts.ansible_facts.datacenter | default('') }}"
 
 - name: Verify host belongs to a datacenter
   assert:
@@ -55,15 +36,39 @@
     fail_msg: "ESXi host {{ inventory_hostname }} is not part of any datacenter"
     success_msg: "ESXi host {{ inventory_hostname }} is in datacenter {{ datacenter_name }}"
 
-- name: Assert the host belongs to a cluster
+# 2 - Gather cluster name the target ESXi host belongs to
+- name: Gather list of all clusters in the datacenter {{ datacenter_name }}
+  no_log: true
+  vmware.vmware.cluster_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    datacenter: "{{ datacenter_name }}"
+    validate_certs: "{{ validate_certs }}"
+  delegate_to: localhost
+  register: all_clusters
+
+- name: Derive cluster name (and MoID) from host membership
+  no_log: true
+  set_fact:
+    cluster_name: "{{ item.key }}"
+    cluster_moid: "{{ item.value.moid }}"
+  loop: "{{ all_clusters.clusters | dict2items }}"
+  when: >
+    item.value.hosts is defined and
+    inventory_hostname in (item.value.hosts | map(attribute='name') | list)
+
+- name: Verify the ESXi host belongs to a cluster
   ansible.builtin.assert:
     that:
+      - cluster_name is defined
       - cluster_name | length > 0
-    fail_msg: "ESXi host {{ inventory_hostname }} is not in any cluster (stand-alone)"
-    success_msg: "ESXi host {{ inventory_hostname }} is in cluster {{ cluster_name }}"
+    fail_msg: "ESXi host {{ inventory_hostname }} is not a member of any cluster in datacenter {{ datacenter_name }}"
+    success_msg: "ESXi host {{ inventory_hostname }} is in cluster {{ cluster_name }} (MoID={{ cluster_moid }})"
 
-# Validate cluster-wide DRS settings and per-VM overrides
+# 3 - Validate cluster-wide DRS settings and per-VM overrides
 - name: Gather cluster details (DRS config + per-VM overrides)
+  no_log: true
   vmware.vmware.cluster_info:
     hostname: "{{ vcenter_hostname }}"
     username: "{{ vcenter_username }}"
@@ -72,7 +77,8 @@
     cluster_name: "{{ cluster_name }}"
     schema: vsphere
     properties:
-      - "configurationEx"
+      - moid
+      - configurationEx
     validate_certs: "{{ validate_certs }}"
   delegate_to: localhost
   register: cluster_info
@@ -106,8 +112,29 @@
     fail_msg: "The following VM(s) have MANUAL DRS override: {{ manual_drs_vms | join(', ') }}"
     success_msg: "No VM in cluster {{ cluster_name }} is using MANUAL DRS"
 
-# Evacuate all VMs from the ESXi host and put it in maintenance mode
-- name: Evacuate all VMs from the ESXi host {{ inventory_hostname }} and put it in maintenance mode
+# 4 - List VMs that are powered-on on this host
+- name: Gather list of powered-on VMs on ESXi host {{ inventory_hostname }} before maintenance mode
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ validate_certs }}"
+    show_esxi_hostname: true
+  delegate_to: localhost
+  register: pre_vm_info
+
+- name: Cache list of powered-on VMs on {{ inventory_hostname }}
+  set_fact:
+    pre_running_vms: >-
+      {{
+        pre_vm_info.virtual_machines
+          | selectattr('esxi_hostname', 'equalto', inventory_hostname)
+          | selectattr('power_state', 'equalto', 'poweredOn')
+          | map(attribute='name') | list
+      }}
+
+# 5 - Evacuate all VMs from the ESXi host and put it in maintenance mode - fail if vMotion cannot finish
+- name: Evacuate VMs and enter maintenance mode (no power-off)
   vmware.vmware.esxi_maintenance_mode:
     hostname: "{{ vcenter_hostname }}"
     username: "{{ vcenter_username }}"
@@ -116,10 +143,44 @@
     validate_certs: "{{ validate_certs }}"
     enable_maintenance_mode: true
     evacuate: true
-    timeout: 600
+    timeout: 1800
   delegate_to: localhost
+- register: maintenance_task
 
-- name: Verify ESXi host {{ inventory_hostname }} is in maintenance mode
+- name: Confirm all VMs migrated live (no power-off)
+  community.vmware.vmware_vm_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ validate_certs }}"
+  delegate_to: localhost
+  register: post_vm_info
+
+- name: Assert migration success and VM power state
+  ansible.builtin.assert:
+    that:
+      - >
+        (
+          pre_running_vms
+          | difference(
+              post_vm_info.virtual_machines
+                | selectattr('power_state','equalto','poweredOn')
+                | map(attribute='name') | list
+            )
+        ) | length == 0
+    fail_msg: >-
+      "VM(s) {{
+         pre_running_vms
+           | difference(
+               post_vm_info.virtual_machines
+                 | selectattr('power_state','equalto','poweredOn')
+                 | map(attribute='name') | list
+             )
+           | join(', ')
+       }} failed to vMotion – patching stopped."
+    success_msg: "All {{ pre_running_vms|length }} running VM(s) vMotioned cleanly; host is safe in Maintenance Mode"
+
+- name: Refresh host facts after maintenance entry
   community.vmware.vmware_host_facts:
     hostname: "{{ vcenter_hostname }}"
     username: "{{ vcenter_username }}"
@@ -129,9 +190,14 @@
   delegate_to: localhost
   register: post_maintenance_host_facts
 
-- name: Assert ESXi host {{ inventory_hostname }} is in maintenance mode
+- name: Wait for host to enter maintenance mode
   ansible.builtin.assert:
     that:
       - post_maintenance_host_facts.ansible_facts.ansible_in_maintenance_mode
-    success_msg: "ESXi host {{ inventory_hostname }} confirmed in maintenance mode. Can proceed with ESXi host patching."
-    fail_msg: "ESXi host {{ inventory_hostname }} failed to enter maintenance mode"
+    success_msg: "Host {{ inventory_hostname }} is now in maintenance mode."
+    fail_msg: "Host {{ inventory_hostname }} not yet in maintenance mode."
+  retries: 6
+  delay: 10
+  until: post_maintenance_host_facts.ansible_facts.ansible_in_maintenance_mode
+
+  # End of pre_validation/tasks/main.yml
