@@ -1,139 +1,16 @@
 ---
-# roles/esxi_patching/tasks/main.yml
+# roles/vlcm_baseline/tasks/main.yml
 
-###############################################################################
-# Perform ESXi Patching activities via VMware’s REST API with the vLCM baseline
-###############################################################################
+#################################################################
+# Perform Image preparation, Attach and ESXi Remediation
+#################################################################
 
-# 1 - Gather fresh host facts and verify connectivity + maintenance mode
-- name: Gather fresh host facts (cluster MoID, connection & MM state)
-  community.vmware.vmware_host_facts:
-    hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    esxi_hostname: "{{ inventory_hostname }}"
-    validate_certs: "{{ validate_certs }}"
-    schema: vsphere
-    properties:
-      - parent
-      - runtime.connectionState
-      - runtime.inMaintenanceMode
-  delegate_to: localhost
-  register: host_facts
+# Orchestrator for Baseline role
+- name: "VLCM: Prepare Image from available deopts ..."
+  include_tasks: vlcm_prep.yml
 
-- name: Assert ESXi host is connected to vCenter
-  ansible.builtin.assert:
-    that:
-      - host_facts.ansible_facts.runtime.connectionState == 'connected'
-    fail_msg: "ESXi host {{ inventory_hostname }} lost connection to vCenter"
-    success_msg: "ESXi host {{ inventory_hostname }} is connected"
+- name: "VLCM: Image Attach and Compliance Check ..."
+  include_tasks: vlcm_image_attach.yml
 
-- name: Assert ESXi host is in Maintenance Mode
-  ansible.builtin.assert:
-    that:
-      - host_facts.ansible_facts.runtime.inMaintenanceMode
-    fail_msg: "ESXi host {{ inventory_hostname }} is NOT in Maintenance Mode"
-    success_msg: "ESXi host {{ inventory_hostname }} confirmed in Maintenance Mode"
-
-- name: Set cluster MoID for vLCM calls
-  ansible.builtin.set_fact:
-    cluster_moid: "{{ host_facts.ansible_facts.parent.value }}"
-
-# 2 - (Optional) Create or update a Draft with the desired image
-- name: Put desired image into a Draft (idempotent)
-  vmware.vmware_rest.esx_settings_clusters_software_drafts:
-    vcenter_hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    verify_ssl: "{{ validate_certs }}"
-    cluster: "{{ cluster_moid }}"
-    draft: "{{ lcm_draft_name }}"
-    state: present
-    software_spec:
-      base_image_version: "{{ cluster_image_version }}"
-  delegate_to: localhost
-  tags: always
-
-# 3 - Compliance scan (so vLCM reports non-compliant hosts)
-- name: Start compliance scan
-  vmware.vmware_rest.esx_settings_clusters_software_apply:
-    vcenter_hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    verify_ssl: "{{ validate_certs }}"
-    cluster: "{{ cluster_moid }}"
-    check_only: true
-  delegate_to: localhost
-  register: scan_task
-
-- name: Wait for compliance scan to finish
-  vmware.vmware_rest.task_info:
-    vcenter_hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    verify_ssl: "{{ validate_certs }}"
-    task_id: "{{ scan_task.value }}"
-  delegate_to: localhost
-  retries: 60
-  delay: 20
-  register: scan_status
-  until: scan_status.value.state in ['SUCCEEDED','FAILED']
-
-- name: Abort if compliance scan failed
-  ansible.builtin.fail:
-    msg: "vLCM compliance scan failed: {{ scan_status.value.error }}"
-  when: scan_status.value.state != 'SUCCEEDED'
-
-# 4 - Remediate (actual patch/apply)
-- name: Trigger remediation task (image apply)
-  vmware.vmware_rest.esx_settings_clusters_software_apply:
-    vcenter_hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    verify_ssl: "{{ validate_certs }}"
-    cluster: "{{ cluster_moid }}"
-    spec:
-      remediate_hosts_immediately: true
-      enable_parallel_reboot: true
-  delegate_to: localhost
-  register: remediate_task
-
-- name: Wait for remediation task to complete
-  vmware.vmware_rest.task_info:
-    vcenter_hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    verify_ssl: "{{ validate_certs }}"
-    task_id: "{{ remediate_task.value }}"
-  delegate_to: localhost
-  retries: "{{ (patch_timeout | int / 30) | round(0,'ceil') }}"
-  delay: 30
-  register: patch_status
-  until: patch_status.value.state in ['SUCCEEDED','FAILED']
-
-- name: Fail if remediation failed
-  ansible.builtin.fail:
-    msg: "vLCM remediation failed: {{ patch_status.value.error }}"
-  when: patch_status.value.state != 'SUCCEEDED'
-
-# 5 - Post-patch verification
-- name: Gather final host facts (build verification)
-  community.vmware.vmware_host_facts:
-    hostname: "{{ vcenter_hostname }}"
-    username: "{{ vcenter_username }}"
-    password: "{{ vcenter_password }}"
-    esxi_hostname: "{{ inventory_hostname }}"
-    validate_certs: "{{ validate_certs }}"
-    show_datacenter: false
-  delegate_to: localhost
-  register: final_facts
-
-- name: Show post-patch ESXi build number
-  ansible.builtin.debug:
-    msg: "ESXi host {{ inventory_hostname }} now at build {{ final_facts.ansible_facts.ansible_distribution_build }}"
-
-- name: Log overall success
-  ansible.builtin.debug:
-    msg: "ESXi host {{ inventory_hostname }} remediated to {{ cluster_image_version }} successfully."
-
-  # End of esxi_patching/tasks/main.yml
+# - name: "VLCM: Remediate ESXi host using vLCM REST API ..."
+#   include_tasks: vlcm_remediate.yml
