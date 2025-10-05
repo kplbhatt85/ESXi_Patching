@@ -18,7 +18,7 @@
 - name: "Verify vCenter '{{ vcenter_hostname }}' connection state ..."
   ansible.builtin.assert:
     that:
-    - vcenter_info.failed is not defined or not vcenter_info.failed
+      - vcenter_info.failed is not defined or not vcenter_info.failed
     fail_msg: "Failed to connect vCenter '{{ vcenter_hostname }}'"
     success_msg: "Connected to vCenter '{{ vcenter_hostname }}' successfully"
 
@@ -37,7 +37,7 @@
 - name: "Assert ESXi host connection state and datacenter/cluster membership"
   ansible.builtin.assert:
     that:
-    - host_facts.ansible_host.host_connection_state == 'connected'
+      - host_facts.ansible_host.host_connection_state == 'connected'
     fail_msg: "ESXi host '{{ esxi_host }}' is not connected to vCenter '{{ vcenter_hostname }}'"
     success_msg: "ESXi host '{{ esxi_host }}' is connected to vCenter '{{ vcenter_hostname }}'"
 
@@ -48,7 +48,7 @@
 - name: "Verify ESXi host belongs to a datacenter"
   ansible.builtin.assert:
     that:
-    - datacenter_name | length > 0
+      - datacenter_name | length > 0
     fail_msg: "ESXi host '{{ esxi_host }}' is not part of any datacenter"
     success_msg: "ESXi host '{{ esxi_host }}' is part of datacenter '{{ datacenter_name }}'"
 
@@ -76,8 +76,8 @@
 - name: "Verify the ESXi host belongs to a cluster"
   ansible.builtin.assert:
     that:
-    - cluster_name is defined
-    - cluster_name | length > 0
+      - cluster_name is defined
+      - cluster_name | length > 0
     fail_msg: "ESXi host '{{ esxi_host }}' is not a member of any cluster in datacenter '{{ datacenter_name }}'"
     success_msg: "ESXi host '{{ esxi_host }}' is member of cluster '{{ cluster_name }}' (MoID='{{ cluster_moid }}')"
 
@@ -91,7 +91,7 @@
     cluster_name: "{{ cluster_name }}"
     schema: vsphere
     properties:
-    - configurationEx
+      - configurationEx
     validate_certs: "{{ validate_certs }}"
     register: cluster_info
 
@@ -113,7 +113,7 @@
 - name: "Assert cluster or VM-level DRS configuration ..."
   ansible.builtin.assert:
     that:
-    - cluster_drs_enabled or (manual_drs_vms | length > 0) or (cluster_drs_default != 'unknown')
+      - cluster_drs_enabled or (manual_drs_vms | length > 0) or (cluster_drs_default != 'unknown')
     fail_msg: "Neither cluster-wide DRS nor per-VM DRS automation is configured for cluster '{{ cluster_name }}'"
     success_msg: >-
       DRS is configured on cluster {{ cluster_name }}:

@@ -9,8 +9,8 @@
 - name: "VLCM: Prepare Image from available deopts ..."
   include_tasks: vlcm_prepare.yml
 
-- name: "VLCM: Image Attach and Compliance Check ..."
-  include_tasks: vlcm_image_attach.yml
+# - name: "VLCM: Image Attach and Compliance Check ..."
+#   include_tasks: vlcm_attach.yml
 
 # - name: "VLCM: Remediate ESXi host using vLCM REST API ..."
 #   include_tasks: vlcm_remediate.yml

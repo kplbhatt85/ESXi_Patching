@@ -13,7 +13,7 @@
         # Step 1: Pre-Validation for ESXi Patching
         - name: "Step 1 - Pre-Validation for ESXi Patching ..."
           block:
-            - name: "Initiate role 'pre_validation' ..." 
+            - name: "Initiate role 'pre_validation' ..."
               ansible.builtin.include_role:
                 name: pre_validation
           delegate-to: localhost
@@ -21,17 +21,17 @@
         # Step 2: vLCM Image/Baseline ESXi patching
         - name: "Step 2 - vLCM Image/Baseline ESXi patching ..."
           block:
-            - name: "Initiate role 'vlcm_patching' ..." 
+            - name: "Initiate role 'vlcm_patching' ..."
               ansible.builtin.include_role:
                 name: vlcm_patching
           delegate-to: localhost
 
-        # Step 3: Post-Validation for ESXi Patching
-        - name: "Step 3 - Post-Validation for ESXi Patching ..."
-          block:
-            - name: "Initiate role 'post_validation' ..." 
-              ansible.builtin.include_role:
-                name: post_validation
-          delegate-to: localhost
+        # # Step 3: Post-Validation for ESXi Patching
+        # - name: "Step 3 - Post-Validation for ESXi Patching ..."
+        #   block:
+        #     - name: "Initiate role 'post_validation' ..."
+        #       ansible.builtin.include_role:
+        #         name: post_validation
+        #   delegate-to: localhost
 
   # End of play
