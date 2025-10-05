@@ -3,5 +3,5 @@ vcenter_hostname: ""
 vcenter_username: ""
 vcenter_password: ""
 inventory_hostname: ""
-cluster_image_version: ""
+input_base_image_vers: ""
 validate_certs: false

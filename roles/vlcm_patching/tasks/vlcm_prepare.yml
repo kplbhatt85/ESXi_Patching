@@ -1,5 +1,5 @@
 ---
-# roles/vlcm_baseline/tasks/vlcm_image_prep.yml
+# roles/vlcm_baseline/tasks/vlcm_prepare.yml
 
 # Step 1 - vCenter authentication
 - name: "Authenticate to vCenter REST API ..."
@@ -10,8 +10,8 @@
     password: "{{ vcenter_password }}"
     force_basic_auth: yes
     validate_certs: "{{ validate_certs }}"
-    register: vcenter_session
-    no_log: "{{ esxi_patch_no_log | default(true) }}"
+  register: vcenter_session
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
 
 # Step 2 - Validate if bundle exists in vCenter LCM depot
 - name: "Get list of existing offline depots ..."
@@ -21,9 +21,9 @@
     headers:
       vmware-api-session-id: "{{ vcenter_session.json.value }}"
     validate_certs: "{{ validate_certs }}"
-    register: existing_depots_list
-    failed_when: false
-    no_log: "{{ esxi_patch_no_log | default(true) }}"
+  register: existing_depots_list
+  failed_when: false
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
 
 - name: "Collect depot IDs ..."
   ansible.builtin.set_fact:
@@ -37,9 +37,9 @@
     headers:
       vmware-api-session-id: "{{ vcenter_session.json.value }}"
     validate_certs: "{{ validate_certs | default(true) }}"
-    register: existing_depot_contents
-    failed_when: false
-    loop: "{{ existing_depot_ids }}"
+  register: existing_depot_contents
+  failed_when: false
+  loop: "{{ existing_depot_ids }}"
 
 - name: "Failed if no bundles found ..."
   ansible.builtin.fail:
@@ -71,8 +71,7 @@
         selected_depot: "{{ item }}"
         selected_depot_id: "{{ item.id }}"
       loop: "{{ base_image_depots }}"
-      when:
-        item.base_images is defined and (item.base_images | selectattr('version', 'search', input_base_image_vers) | list | length > 0)
+      when: item.base_images is defined and (item.base_images | selectattr('version', 'search', input_base_image_vers) | list | length > 0)
       loop_control:
         label: "{{ item.id }}"
 
@@ -90,6 +89,8 @@
             | list
             | first
           }}
+    - debug:
+        var: final_base_image
 
     - name: "Debug: Selected depot and images"
       ansible.builtin.debug:

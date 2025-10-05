@@ -12,8 +12,8 @@
     username: "{{ vcenter_username }}"
     password: "{{ vcenter_password }}"
     validate_certs: "{{ validate_certs }}"
-    register: vcenter_info
-    no_log: "{{ esxi_patch_no_log | default(true) }}"
+  register: vcenter_info
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
 
 - name: "Verify vCenter '{{ vcenter_hostname }}' connection state ..."
   ansible.builtin.assert:
@@ -31,19 +31,27 @@
     esxi_hostname: "{{ esxi_host }}"
     validate_certs: "{{ validate_certs }}"
     show_datacenter: true
-    register: host_facts
-    no_log: "{{ esxi_patch_no_log | default(true) }}"
+  register: host_facts
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
 
 - name: "Assert ESXi host connection state and datacenter/cluster membership"
   ansible.builtin.assert:
     that:
-      - host_facts.ansible_host.host_connection_state == 'connected'
+      - host_facts.ansible_facts.ansible_host_connection_state == 'connected'
     fail_msg: "ESXi host '{{ esxi_host }}' is not connected to vCenter '{{ vcenter_hostname }}'"
     success_msg: "ESXi host '{{ esxi_host }}' is connected to vCenter '{{ vcenter_hostname }}'"
 
+- name: "Get datacenter info ..."
+  community.vmware.vmware_datacenter_info:
+    hostname: "{{ vcenter_hostname }}"
+    username: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    validate_certs: "{{ validate_certs }}"
+  register: dc_info
+
 - name: "Set datacenter name from host facts"
   ansible.builtin.set_fact:
-    datacenter_name: "{{ host_facts.ansible_facts.datacenter | default('') }}"
+    datacenter_name: "{{ dc_info.datacenter_info[0].name | default('') }}"
 
 - name: "Verify ESXi host belongs to a datacenter"
   ansible.builtin.assert:
@@ -60,8 +68,8 @@
     password: "{{ vcenter_password }}"
     datacenter: "{{ datacenter_name }}"
     validate_certs: "{{ validate_certs }}"
-    register: all_clusters
-    no_log: "{{ esxi_patch_no_log | default(true) }}"
+  register: all_clusters
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
 
 - name: "Derive cluster name and (MoID) from host membership ..."
   ansible.builtin.set_fact:
@@ -93,7 +101,8 @@
     properties:
       - configurationEx
     validate_certs: "{{ validate_certs }}"
-    register: cluster_info
+  register: cluster_info
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
 
 - name: "Extract DRS flags and per-VM overrides ..."
   ansible.builtin.set_fact:

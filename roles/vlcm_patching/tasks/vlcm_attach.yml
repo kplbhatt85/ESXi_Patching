@@ -1,0 +1,17 @@
+---
+# roles/vlcm_baseline/tasks/vlcm_attach.yml
+
+# Step 1 - Validate/Attach baseline and run compliance check
+- name: "Validate/Attach baseline and run compliance check ..."
+  ansible.builtin.command: >
+    python3 {{ playbook_dir }}/scripts/vlcm_attach.py
+      --vcenter "{{ vcenter_hostname }}"
+      --username "{{ vcenter_username }}"
+      --password "{{ vcenter_password }}"
+      --cluster "{{ cluster_name }}"
+      --baseline "{{ final_base_image.version }}"
+  register: baseline_compliance_check
+  failed_when: baseline_compliance_check.rc != 0
+  no_log: "{{ esxi_patch_no_log | default(true) }}"
+  changed_when: false
+- debug: var=baseline_compliance_check.stdout_lines
