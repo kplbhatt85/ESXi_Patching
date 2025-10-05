@@ -7,7 +7,7 @@ import atexit
 
 """
 Usage:
-  python3 attach_baseline.py <vcenter> <username> <password> <cluster_name> <target_version>
+  python3 vlcm_attach.py <vcenter> <username> <password> <cluster_name> <target_version>
 """
 
 # Args
