@@ -7,7 +7,7 @@
 
 # Orchestrator for Baseline role
 - name: "VLCM: Prepare Image from available deopts ..."
-  include_tasks: vlcm_prep.yml
+  include_tasks: vlcm_prepare.yml
 
 - name: "VLCM: Image Attach and Compliance Check ..."
   include_tasks: vlcm_image_attach.yml
