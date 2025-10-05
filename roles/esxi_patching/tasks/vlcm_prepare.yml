@@ -1,0 +1,99 @@
+---
+# roles/vlcm_baseline/tasks/vlcm_image_prep.yml
+
+# Step 1 - vCenter authentication
+- name: "Authenticate to vCenter REST API ..."
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_hostname }}/rest/com/vmware/cis/session"
+    method: POST
+    user: "{{ vcenter_username }}"
+    password: "{{ vcenter_password }}"
+    force_basic_auth: yes
+    validate_certs: "{{ validate_certs }}"
+    register: vcenter_session
+    no_log: "{{ esxi_patch_no_log | default(true) }}"
+
+# Step 2 - Validate if bundle exists in vCenter LCM depot
+- name: "Get list of existing offline depots ..."
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_hostname }}/api/esx/settings/depots/offline"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json.value }}"
+    validate_certs: "{{ validate_certs }}"
+    register: existing_depots_list
+    failed_when: false
+    no_log: "{{ esxi_patch_no_log | default(true) }}"
+
+- name: "Collect depot IDs ..."
+  ansible.builtin.set_fact:
+    existing_depot_ids: "{{ existing_depots_list.json.keys() | list | default([]) }}"
+
+# Step 3 - Get content from each depot
+- name: "Get content from each depot ..."
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_hostname }}/api/esx/settings/depots/offline/{{ item }}/content"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json.value }}"
+    validate_certs: "{{ validate_certs | default(true) }}"
+    register: existing_depot_contents
+    failed_when: false
+    loop: "{{ existing_depot_ids }}"
+
+- name: "Failed if no bundles found ..."
+  ansible.builtin.fail:
+    msg: "No bundle found inside existing depots, ask VM team to upload the bundle. Aborting operation!"
+  when: existing_depot_contents.results | length == 0
+
+# Step 4 - Validate and continue if any bundle found inside vCenter
+- block:
+    - name: "Merge depots IDs with their content ..."
+      ansible.builtin.set_fact:
+        depot_objects: "{{ depot_objects | default([]) + [ {'id': item.0, 'content': item.1.json.metadata_bundles.vmw | default([]) } ] }}"
+      loop: "{{ existing_depot_ids | zip(existing_depot_contents.results) | list }}"
+
+    - name: "Filter depots that contains base images only ..."
+      ansible.builtin.set_fact:
+        base_image_depots: "{{ base_image_depots | default([]) + [ {'id': item.id, 'base_images': (item.content | selectattr('base_images', 'defined') | map(attribute='base_images') | flatten | list) } ] }}"
+      loop: "{{ depot_objects }}"
+      loop_control:
+        label: "{{ item.id }}"
+      when: item.content | selectattr('base_images', 'defined') | list | length > 0
+
+    - name: "Failed if provided build version '{{ input_base_image_vers }}' is not valid ..."
+      ansible.builtin.fail:
+        msg: "Provided build number '{{ input_base_image_vers }}' is not a valid 8-10 didgit number. Aborting operation!"
+      when: input_base_image_vers is not match('^[0-9]{8,10}$')
+
+    - name: "Validate presence of user-specified bundle version '{{ input_base_image_vers }}' ..."
+      ansible.builtin.set_fact:
+        selected_depot: "{{ item }}"
+        selected_depot_id: "{{ item.id }}"
+      loop: "{{ base_image_depots }}"
+      when:
+        item.base_images is defined and (item.base_images | selectattr('version', 'search', input_base_image_vers) | list | length > 0)
+      loop_control:
+        label: "{{ item.id }}"
+
+    - name: "Failed if user provided bundle version '{{ input_base_image_vers }}' not found ..."
+      ansible.builtin.fail:
+        msg: "Build number '{{ input_base_image_vers }}' not found in any base-image bundle. Aborting operation!"
+      when: (selected_depot is not defined) or (selected_depot_id is not defined)
+
+    - name: "Store base/final image from selected depot ..."
+      ansible.builtin.set_fact:
+        final_base_image: >-
+          {{
+            selected_depot.base_images
+            | selectattr('display_version', 'search', input_base_image_vers)
+            | list
+            | first
+          }}
+
+    - name: "Debug: Selected depot and images"
+      ansible.builtin.debug:
+        msg: >
+          Selected Depot ID: "{{ selected_depot_id }}";
+          Base Images: "{{ final_base_image.display_version }}"
+  when: existing_depot_contents.results | length > 0
