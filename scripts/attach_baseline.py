@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import ssl, sys
+
+import ssl, sys, time
 from pyVim.connect import SmartConnect, Disconnect # type: ignore
 from pyVmomi import vim # type: ignore
 import atexit
@@ -31,13 +32,7 @@ if not cluster:
     print(f"Error - Cluster {cluster_name} not found")
     sys.exit(1)
 
-# Query baselines
-baseline_manager = content.extensionManager.FindExtension("com.vmware.vcIntegrity")
-if not baseline_manager:
-    print("Error - Update Manager (VUM) / vLCM baseline service not found")
-    sys.exit(1)
-
-# The actual baseline objects live in the ComplianceManager
+# Compliance Manager
 comp_mgr = content.complianceManager
 baselines = comp_mgr.QueryBaselines(entity=[cluster])
 
@@ -62,14 +57,26 @@ print(f"Attaching baseline '{match.name}' (ID={match.key}) to cluster '{cluster.
 
 # Attach baseline
 task = comp_mgr.AttachBaseline_Task(entity=cluster, baseline=[match])
-
-# Poll until finished
 while task.info.state in [vim.TaskInfo.State.queued, vim.TaskInfo.State.running]:
-    continue
+    time.sleep(2)
 
-if task.info.state == vim.TaskInfo.State.success:
-    print(f"Baseline '{match.name}' attached successfully")
-    sys.exit(0)
-else:
+if task.info.state != vim.TaskInfo.State.success:
     print(f"Failed to attach baseline '{match.name}':", task.info.error)
     sys.exit(1)
+
+print(f"Baseline '{match.name}' attached successfully")
+
+# Run compliance check
+print("Running compliance check...")
+check_task = comp_mgr.CheckCompliance_Task(entity=[cluster])
+while check_task.info.state in [vim.TaskInfo.State.queued, vim.TaskInfo.State.running]:
+    time.sleep(2)
+
+if check_task.info.state != vim.TaskInfo.State.success:
+    print("Compliance check failed:", check_task.info.error)
+    sys.exit(1)
+
+# Get compliance results
+results = comp_mgr.QueryComplianceStatus(entity=[cluster])
+for r in results:
+    print(f"Cluster compliance status: {r.complianceStatus}")
