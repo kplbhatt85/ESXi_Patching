@@ -2,45 +2,36 @@
 # Update ESXi OS with latest patch with available latest baseline via vCenter's Life Cycle Manager
 - name: "ESXi OS patching - vCenter's Life Cycle Manager ..."
   hosts: all !localhost
-  gather_facts: true
-  gather_subset:
-    - min
-  collections:
-    - community.vmware
+  gather_facts: false
 
   vars_files: # Target variables files
     - "variables/common/set-execution-environment.yml"
     - "variables/play/get-esxi-info.yml"
 
   tasks:
-    - block: # ESXi OS Patching
-        # Step 1: Initialize Workspace - nab_ansa.workspace.init
-        - name: "Step 1 - Initialize target Workspace ..."
-          ansible.builtin.include_role:
-            role: nab_ansa.workspace.init
-            apply: { tags: ["always"] }
-          vars:
-            workspace_state: "directory"
-            credential_actions: "{{ cred_actions }}"
+    - block:
+        # Step 1: Pre-Validation for ESXi Patching
+        - name: "Step 1 - Pre-Validation for ESXi Patching ..."
+          block:
+            - name: "Initiate role 'pre_validation' ..." 
+              ansible.builtin.include_role:
+                name: pre_validation
+          delegate-to: localhost
 
-        # Step 2: Pre-Validation for ESXi Patching
-        - name: "Step 2 - Pre-Validation for ESXi Patching ..."
-          ansible.builtin.include_role:
-            name: pre_validation
+        # Step 2: vLCM Image/Baseline ESXi patching
+        - name: "Step 2 - vLCM Image/Baseline ESXi patching ..."
+          block:
+            - name: "Initiate role 'vlcm_patching' ..." 
+              ansible.builtin.include_role:
+                name: vlcm_patching
+          delegate-to: localhost
 
-        # Step 3: ESXi Patching
-        - name: "Step 3 – ESXi Patching ..."
-          serial: 1
-          include_role:
-            name: esxi_patching
-          vars:
-            cluster_image_version: "baseline_image_version"
-            lcm_draft_name: "ansible-prep-{{ inventory_hostname }}"
-            patch_timeout: 7200 # 2 hours
-
-        # Step 4: Post-Validation for ESXi Patching
-        - name: "Step 4 - Post-Validation for ESXi Patching ..."
-          ansible.builtin.include_role:
-            name: post_validation
+        # Step 3: Post-Validation for ESXi Patching
+        - name: "Step 3 - Post-Validation for ESXi Patching ..."
+          block:
+            - name: "Initiate role 'post_validation' ..." 
+              ansible.builtin.include_role:
+                name: post_validation
+          delegate-to: localhost
 
   # End of play
